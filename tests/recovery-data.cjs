@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const c={structuredClone,localStorage:{values:{},getItem(k){return this.values[k]||null},setItem(k,v){this.values[k]=v}}};vm.createContext(c);
+for(const f of ['data/catalog.js','data/relations.js','services/recommendations.js','services/storage.js','services/design-state.js'])vm.runInContext(fs.readFileSync(f,'utf8'),c);
+const run=s=>vm.runInContext(s,c);
+run("globalThis.s=SkinmateDesign.fresh();s.concerns=['색소·톤'];s.details=['색소침착'];s.priorities=['의료진 신뢰','가격'];s.regions=['서울 · 강남'];SkinmateDesign.commit(s)");
+assert.equal(run('s.activeConcern'),'pigmentation');
+assert(run('SkinmateDesign.rank(s).length')>0);
+assert(run('SkinmateDesign.snapshot(s).homeContent.every(x=>SkinmateData.treatments.find(t=>t.id===x.treatmentId).concernIds.includes(x.concernId))'));
+assert(run('SkinmateDesign.snapshot(s).treatments.every(x=>x.hospitalIds.every(h=>SkinmateLogic.getOffer(h,x.id))&&x.reviewIds.every(id=>SkinmateData.reviews.some(r=>r.id===id&&r.treatmentId===x.id)))'));
+run("SkinmateDesign.toggleSaved(s,'hospital','h1');SkinmateDesign.toggleSaved(s,'offer','h1:botox');globalThis.loaded=SkinmateDesign.load()");assert.equal(run('loaded.savedHospitalIds[0]'),'h1');assert.equal(run('loaded.savedOfferIds[0]'),'h1:botox');
+run("globalThis.old=JSON.stringify({profile:{concerns:['色','여드름 흉터'],regions:['강남']},saved:['h2'],savedTreatments:{h2:'fraxel'},onboarded:true});localStorage.values={};localStorage.setItem('skinmate-v2',old);globalThis.migrated=SkinmateDesign.load()");
+assert.equal(run("localStorage.getItem('skinmate-v2')===old"),true);assert.equal(run("localStorage.getItem('skinmate-recovery-v2-backup')===old"),true);assert.equal(run('migrated.activeConcern'),'acneScar');assert.equal(run('migrated.savedHospitalIds[0]'),'h2');
+const before=run('JSON.stringify(SkinmateDesign.rank(s).map(t=>[t.id,t.bestHospital.id]))');
+run("SkinmateDesign.activate(s,'squareJaw');s.regions=['서울 · 강남'];s.budget=0;globalThis.first=SkinmateDesign.rank(s)[0];globalThis.hid=first.bestHospital.id;globalThis.tid=first.id;globalThis.beforeCount=first.bestHospital.aggregate.count;for(let i=0;i<50;i++)s.userReviews.push({id:'local-'+i,hospitalId:hid,treatmentId:tid,content:'체험 후기',overallRating:1,effectRating:1,recoveryRating:1,priceRating:1,painRating:1,doctorTrustRating:1,distanceRating:1})");
+assert.equal(run('SkinmateLogic.aggregateReviews(hid,tid,SkinmateDesign.reviews(s)).count'),run('beforeCount+50'));
+assert.notEqual(run('SkinmateDesign.rank(s)[0].bestHospital.id'),run('hid'));
+assert.notEqual(before,run('JSON.stringify(SkinmateDesign.rank(s).map(t=>[t.id,t.bestHospital.id]))'));
+console.log('PASS: relational Home, treatment-specific reviews, changing rankings, saved IDs and non-destructive legacy migration');
